@@ -1,0 +1,210 @@
+---
+# InfraWatch Ansible Deployment Playbook
+# Covers: playbook authoring, inventory management, automated provisioning,
+#         idempotent tasks, handlers, variables, roles structure
+#
+# Usage:
+#   ansible-playbook -i inventory.ini deploy.yml
+#   ansible-playbook -i inventory.ini deploy.yml --tags docker   # only docker tasks
+#   ansible-playbook -i inventory.ini deploy.yml --check         # dry run
+
+- name: Deploy InfraWatch monitoring stack
+  hosts: monitoring_servers
+  become: true
+  vars:
+    infrawatch_dir: /opt/infrawatch
+    infrawatch_user: infrawatch
+    docker_compose_version: "2.27.0"
+    cpu_threshold: 80
+    mem_threshold: 85
+    disk_threshold: 90
+    check_interval: 30
+
+  handlers:
+    - name: restart docker
+      ansible.builtin.service:
+        name: docker
+        state: restarted
+
+    - name: restart infrawatch
+      community.docker.docker_compose_v2:
+        project_src: "{{ infrawatch_dir }}"
+        state: restarted
+
+  tasks:
+
+    # ── System prerequisites ─────────────────────────────────────────────────
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+      tags: [system]
+
+    - name: Install required system packages
+      ansible.builtin.apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - python3-pip
+          - bc
+          - dnsutils
+          - iproute2
+          - net-tools
+        state: present
+      tags: [system]
+
+    # ── Docker installation ──────────────────────────────────────────────────
+    - name: Add Docker GPG key
+      ansible.builtin.apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+      tags: [docker]
+
+    - name: Add Docker apt repository
+      ansible.builtin.apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+      tags: [docker]
+
+    - name: Install Docker engine
+      ansible.builtin.apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-compose-plugin
+        state: present
+      notify: restart docker
+      tags: [docker]
+
+    - name: Ensure Docker service is running and enabled
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+      tags: [docker]
+
+    - name: Install Docker SDK for Python (needed for Ansible docker modules)
+      ansible.builtin.pip:
+        name: docker
+        state: present
+      tags: [docker]
+
+    # ── Create infrawatch user and directories ───────────────────────────────
+    - name: Create infrawatch system user
+      ansible.builtin.user:
+        name: "{{ infrawatch_user }}"
+        system: true
+        shell: /sbin/nologin
+        groups: docker
+        append: true
+      tags: [setup]
+
+    - name: Create required directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ infrawatch_user }}"
+        group: "{{ infrawatch_user }}"
+        mode: "0755"
+      loop:
+        - "{{ infrawatch_dir }}"
+        - "{{ infrawatch_dir }}/scripts"
+        - "{{ infrawatch_dir }}/grafana/dashboards"
+        - "{{ infrawatch_dir }}/grafana/provisioning"
+        - /var/log/infrawatch
+        - /var/lib/infrawatch
+      tags: [setup]
+
+    # ── Deploy application files ─────────────────────────────────────────────
+    - name: Copy InfraWatch scripts
+      ansible.builtin.copy:
+        src: "{{ item.src }}"
+        dest: "{{ infrawatch_dir }}/{{ item.dest }}"
+        owner: "{{ infrawatch_user }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - { src: scripts/monitor.sh, dest: scripts/monitor.sh, mode: "0755" }
+        - { src: scripts/metrics_server.py, dest: scripts/metrics_server.py, mode: "0644" }
+        - { src: docker-entrypoint.sh, dest: docker-entrypoint.sh, mode: "0755" }
+      tags: [deploy]
+
+    - name: Template docker-compose.yml with environment-specific values
+      ansible.builtin.template:
+        src: docker-compose.yml.j2
+        dest: "{{ infrawatch_dir }}/docker-compose.yml"
+        owner: "{{ infrawatch_user }}"
+        mode: "0644"
+      notify: restart infrawatch
+      tags: [deploy]
+
+    - name: Copy Prometheus config
+      ansible.builtin.copy:
+        src: prometheus.yml
+        dest: "{{ infrawatch_dir }}/prometheus.yml"
+        owner: "{{ infrawatch_user }}"
+        mode: "0644"
+      notify: restart infrawatch
+      tags: [deploy]
+
+    - name: Copy Dockerfile
+      ansible.builtin.copy:
+        src: Dockerfile
+        dest: "{{ infrawatch_dir }}/Dockerfile"
+        owner: "{{ infrawatch_user }}"
+        mode: "0644"
+      tags: [deploy]
+
+    # ── Build and start stack ────────────────────────────────────────────────
+    - name: Build InfraWatch Docker image
+      community.docker.docker_image:
+        name: infrawatch
+        source: build
+        build:
+          path: "{{ infrawatch_dir }}"
+        force_source: true
+      tags: [deploy]
+
+    - name: Start InfraWatch stack with docker compose
+      community.docker.docker_compose_v2:
+        project_src: "{{ infrawatch_dir }}"
+        state: present
+        pull: missing
+      tags: [deploy]
+
+    # ── Firewall configuration ───────────────────────────────────────────────
+    - name: Allow Grafana port through firewall
+      community.general.ufw:
+        rule: allow
+        port: "3000"
+        proto: tcp
+      tags: [firewall]
+
+    - name: Allow Prometheus port (restrict to internal only in production)
+      community.general.ufw:
+        rule: allow
+        port: "9090"
+        proto: tcp
+      tags: [firewall]
+
+    # ── Verify deployment ────────────────────────────────────────────────────
+    - name: Wait for metrics endpoint to become available
+      ansible.builtin.uri:
+        url: "http://localhost:9100/health"
+        status_code: 200
+      register: health_check
+      until: health_check.status == 200
+      retries: 10
+      delay: 5
+      tags: [verify]
+
+    - name: Print deployment summary
+      ansible.builtin.debug:
+        msg:
+          - "InfraWatch deployed successfully"
+          - "Metrics:    http://{{ ansible_host }}:9100/metrics"
+          - "Prometheus: http://{{ ansible_host }}:9090"
+          - "Grafana:    http://{{ ansible_host }}:3000  (admin / infrawatch)"
+      tags: [verify]

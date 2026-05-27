@@ -1,0 +1,76 @@
+version: "3.9"
+
+# InfraWatch full observability stack
+# Runs: infrawatch agent + Prometheus + Grafana
+# Usage: docker compose up -d
+
+services:
+
+  # ── InfraWatch agent ────────────────────────────────────────────────────────
+  infrawatch:
+    build: .
+    container_name: infrawatch-agent
+    restart: unless-stopped
+    environment:
+      CPU_THRESHOLD: "80"
+      MEM_THRESHOLD: "85"
+      DISK_THRESHOLD: "90"
+      CHECK_INTERVAL: "30"
+      METRICS_PORT: "9100"
+    ports:
+      - "9100:9100"
+    volumes:
+      - infrawatch-logs:/var/log/infrawatch
+      - infrawatch-data:/var/lib/infrawatch
+    networks:
+      - monitoring
+
+  # ── Prometheus — scrapes metrics from InfraWatch ────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: infrawatch-prometheus
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=7d"
+      - "--web.enable-lifecycle"
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - monitoring
+    depends_on:
+      - infrawatch
+
+  # ── Grafana — dashboards ─────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: infrawatch-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: "infrawatch"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/infrawatch.json
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    networks:
+      - monitoring
+    depends_on:
+      - prometheus
+
+volumes:
+  infrawatch-logs:
+  infrawatch-data:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  monitoring:
+    driver: bridge
