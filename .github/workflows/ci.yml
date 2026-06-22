@@ -87,10 +87,19 @@ jobs:
           docker run -d --name infrawatch-test \
             -p 9100:9100 \
             infrawatch:${{ github.sha }}
-          sleep 10
+
+          sleep 15
+
+          echo "===== CONTAINER STATUS ====="
+          docker ps -a
+
+          echo "===== CONTAINER LOGS ====="
+          docker logs infrawatch-test || true
+
           curl -f http://localhost:9100/ || exit 1
-          docker logs infrawatch-test
+
           docker stop infrawatch-test
+
   # ── Push to registry (on main branch only) ──────────────────────────────
   docker-push:
     name: Push to Docker Hub
