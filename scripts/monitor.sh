@@ -52,9 +52,11 @@ check_memory() {
   mem_used=$(( mem_total - mem_available ))
   mem_pct=$(echo "scale=1; $mem_used * 100 / $mem_total" | bc)
 
-  echo "infrawatch_memory_usage_percent $mem_pct" >> "$METRICS_FILE"
-  echo "infrawatch_memory_used_bytes $(( mem_used * 1024 ))" >> "$METRICS_FILE"
-  echo "infrawatch_memory_total_bytes $(( mem_total * 1024 ))" >> "$METRICS_FILE"
+  {
+    echo "infrawatch_memory_usage_percent $mem_pct"
+    echo "infrawatch_memory_used_bytes $(( mem_used * 1024 ))"
+    echo "infrawatch_memory_total_bytes $(( mem_total * 1024 ))"
+  } >> "$METRICS_FILE"
 
   local threshold_exceeded
   threshold_exceeded=$(echo "$mem_pct > $MEM_THRESHOLD" | bc -l)

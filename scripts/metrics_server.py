@@ -50,9 +50,7 @@ class MetricsHandler(http.server.BaseHTTPRequestHandler):
             self.send_response(503)
             self.send_header("Content-Type", "text/plain")
             self.end_headers()
-            self.wfile.write(
-                b"# Metrics file not yet available\n"
-            )
+            self.wfile.write(b"# Metrics file not yet available\n")
         except Exception as e:  # noqa: BLE001
             logger.error("Error serving metrics: %s", e)
             self.send_response(500)
@@ -102,9 +100,7 @@ class MetricsHandler(http.server.BaseHTTPRequestHandler):
 
 
 def main():
-    server = http.server.ThreadingHTTPServer(
-        (LISTEN_HOST, LISTEN_PORT), MetricsHandler
-    )
+    server = http.server.ThreadingHTTPServer((LISTEN_HOST, LISTEN_PORT), MetricsHandler)
     logger.info(
         "InfraWatch metrics server listening on %s:%d",
         LISTEN_HOST,
