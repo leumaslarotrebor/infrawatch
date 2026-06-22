@@ -103,9 +103,9 @@ jobs:
   # ── Push to registry (on main branch only) ──────────────────────────────
 docker-push:
   if: false
-    name: Push to Docker Hub
-    runs-on: ubuntu-latest
-    needs: [docker-build]
+  name: Push to Docker Hub
+  runs-on: ubuntu-latest
+  needs: [docker-build]
     if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
