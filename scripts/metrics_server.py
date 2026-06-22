@@ -2,13 +2,11 @@
 """
 InfraWatch metrics server — serves Prometheus-format metrics over HTTP.
 Reads from the file written by monitor.sh and exposes /metrics endpoint.
-Covers: REST/HTTP endpoints, observability, Python, structured responses.
 """
 
 import http.server
 import os
 import time
-import threading
 import logging
 
 logging.basicConfig(
@@ -24,7 +22,7 @@ LISTEN_HOST = os.environ.get("METRICS_HOST", "0.0.0.0")
 
 
 class MetricsHandler(http.server.BaseHTTPRequestHandler):
-    def do_GET(self):
+    def do_GET(self):  # noqa: N802
         if self.path == "/metrics":
             self._serve_metrics()
         elif self.path == "/health":
@@ -41,7 +39,10 @@ class MetricsHandler(http.server.BaseHTTPRequestHandler):
             with open(METRICS_FILE, "r") as f:
                 content = f.read()
             self.send_response(200)
-            self.send_header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+            self.send_header(
+                "Content-Type",
+                "text/plain; version=0.0.4; charset=utf-8",
+            )
             self.end_headers()
             self.wfile.write(content.encode())
             logger.info("Metrics served — %d bytes", len(content))
@@ -49,26 +50,32 @@ class MetricsHandler(http.server.BaseHTTPRequestHandler):
             self.send_response(503)
             self.send_header("Content-Type", "text/plain")
             self.end_headers()
-            self.wfile.write(b"# Metrics file not yet available — monitor.sh may still be starting\n")
-        except Exception as e:
+            self.wfile.write(
+                b"# Metrics file not yet available\n"
+            )
+        except Exception as e:  # noqa: BLE001
             logger.error("Error serving metrics: %s", e)
             self.send_response(500)
             self.end_headers()
 
     def _serve_health(self):
-        """Health check endpoint — used by Docker HEALTHCHECK and load balancers."""
-        metrics_age = None
+        """Health check endpoint — used by Docker HEALTHCHECK."""
+        metrics_age: int | None = None
         status = "degraded"
 
         try:
             mtime = os.path.getmtime(METRICS_FILE)
             metrics_age = int(time.time() - mtime)
-            # Healthy if metrics file updated within last 2 check intervals (60s default)
             status = "ok" if metrics_age < 60 else "stale"
         except FileNotFoundError:
             status = "no-data"
 
-        body = f'{{"status":"{status}","metrics_age_seconds":{metrics_age},"service":"infrawatch"}}\n'
+        age_str = str(metrics_age) if metrics_age is not None else "null"
+        body = (
+            f'{{"status":"{status}",'
+            f'"metrics_age_seconds":{age_str},'
+            f'"service":"infrawatch"}}\n'
+        )
         http_status = 200 if status == "ok" else 503
 
         self.send_response(http_status)
@@ -81,8 +88,8 @@ class MetricsHandler(http.server.BaseHTTPRequestHandler):
 <html><head><title>InfraWatch</title></head><body>
 <h1>InfraWatch Metrics Server</h1>
 <ul>
-  <li><a href="/metrics">/metrics</a> — Prometheus metrics endpoint</li>
-  <li><a href="/health">/health</a> — Health check (JSON)</li>
+  <li><a href="/metrics">/metrics</a> - Prometheus metrics</li>
+  <li><a href="/health">/health</a> - Health check (JSON)</li>
 </ul>
 </body></html>"""
         self.send_response(200)
@@ -90,15 +97,19 @@ class MetricsHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def log_message(self, format, *args):
-        # Suppress default access log — we use our own structured logger
+    def log_message(self, format, *args):  # noqa: A002
         pass
 
 
 def main():
-    server = http.server.ThreadingHTTPServer((LISTEN_HOST, LISTEN_PORT), MetricsHandler)
-    logger.info("InfraWatch metrics server listening on %s:%d", LISTEN_HOST, LISTEN_PORT)
-    logger.info("Endpoints: /metrics  /health  /")
+    server = http.server.ThreadingHTTPServer(
+        (LISTEN_HOST, LISTEN_PORT), MetricsHandler
+    )
+    logger.info(
+        "InfraWatch metrics server listening on %s:%d",
+        LISTEN_HOST,
+        LISTEN_PORT,
+    )
     try:
         server.serve_forever()
     except KeyboardInterrupt:

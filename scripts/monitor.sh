@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # InfraWatch — system health monitor with auto-remediation
-# Covers: Linux CLI, Bash scripting, process management, alerting, incident logging
+# shellcheck disable=SC2312
 
 set -euo pipefail
 
@@ -26,18 +26,19 @@ log_incident() {
 
 # ── CPU Check ─────────────────────────────────────────────────────────────────
 check_cpu() {
-  # Read idle % from /proc/stat — no external tools needed
-  local cpu_idle
+  local cpu_idle cpu_usage
   cpu_idle=$(awk '/^cpu / {idle=$5; total=0; for(i=2;i<=NF;i++) total+=$i; printf "%.1f", idle/total*100}' /proc/stat)
-  local cpu_usage
   cpu_usage=$(echo "100 - $cpu_idle" | bc)
 
   echo "infrawatch_cpu_usage_percent $cpu_usage" >> "$METRICS_FILE"
 
-  if (( $(echo "$cpu_usage > $CPU_THRESHOLD" | bc -l) )); then
+  local threshold_exceeded
+  threshold_exceeded=$(echo "$cpu_usage > $CPU_THRESHOLD" | bc -l)
+  if [ "$threshold_exceeded" = "1" ]; then
     log_incident "WARN" "CPU usage ${cpu_usage}% exceeds threshold ${CPU_THRESHOLD}%"
-    # Show top 3 CPU consumers for root cause
-    log_incident "INFO" "Top CPU consumers: $(ps aux --sort=-%cpu | awk 'NR>1 && NR<=4 {print $11"("$3"%)"}')"
+    local top_procs
+    top_procs=$(ps aux --sort=-%cpu | awk 'NR>1 && NR<=4 {print $11"("$3"%)"}')
+    log_incident "INFO" "Top CPU consumers: $top_procs"
   fi
 
   echo "$cpu_usage"
@@ -55,9 +56,13 @@ check_memory() {
   echo "infrawatch_memory_used_bytes $(( mem_used * 1024 ))" >> "$METRICS_FILE"
   echo "infrawatch_memory_total_bytes $(( mem_total * 1024 ))" >> "$METRICS_FILE"
 
-  if (( $(echo "$mem_pct > $MEM_THRESHOLD" | bc -l) )); then
+  local threshold_exceeded
+  threshold_exceeded=$(echo "$mem_pct > $MEM_THRESHOLD" | bc -l)
+  if [ "$threshold_exceeded" = "1" ]; then
     log_incident "WARN" "Memory usage ${mem_pct}% exceeds threshold ${MEM_THRESHOLD}%"
-    log_incident "INFO" "Top memory consumers: $(ps aux --sort=-%mem | awk 'NR>1 && NR<=4 {print $11"("$4"%)"}')"
+    local top_procs
+    top_procs=$(ps aux --sort=-%mem | awk 'NR>1 && NR<=4 {print $11"("$4"%)"}')
+    log_incident "INFO" "Top memory consumers: $top_procs"
   fi
 
   echo "$mem_pct"
@@ -84,7 +89,6 @@ check_disk() {
 
 # ── Network Check ─────────────────────────────────────────────────────────────
 check_network() {
-  # DNS resolution test
   if ! dig +short google.com > /dev/null 2>&1; then
     log_incident "CRIT" "DNS resolution failed — check /etc/resolv.conf and upstream DNS"
     echo "infrawatch_dns_ok 0" >> "$METRICS_FILE"
@@ -92,9 +96,8 @@ check_network() {
     echo "infrawatch_dns_ok 1" >> "$METRICS_FILE"
   fi
 
-  # Open ports snapshot (informational)
   local open_ports
-  open_ports=$(ss -tulpn | awk 'NR>1 {print $5}' | grep -oP ':\K[0-9]+' | sort -un | tr '\n' ',' | sed 's/,$//')
+  open_ports=$(ss -tulpn | awk 'NR>1 {print $5}' | awk -F: '{print $NF}' | grep -E '^[0-9]+$' | sort -un | tr '\n' ',' | sed 's/,$//')
   log_incident "INFO" "Open ports: $open_ports"
 }
 
@@ -108,7 +111,6 @@ check_services() {
       echo "infrawatch_service_up{service=\"$svc\"} 0" >> "$METRICS_FILE"
       log_incident "CRIT" "Service $svc is DOWN — attempting restart"
 
-      # Auto-remediation: restart and verify
       if systemctl restart "$svc" 2>/dev/null; then
         sleep 3
         if systemctl is-active --quiet "$svc"; then
@@ -127,7 +129,7 @@ check_services() {
 
 # ── Prometheus Metrics Writer ─────────────────────────────────────────────────
 write_metrics_header() {
-  cat > "$METRICS_FILE" <<EOF
+  cat > "$METRICS_FILE" << EOF
 # HELP infrawatch_cpu_usage_percent Current CPU usage percentage
 # TYPE infrawatch_cpu_usage_percent gauge
 # HELP infrawatch_memory_usage_percent Current memory usage percentage
