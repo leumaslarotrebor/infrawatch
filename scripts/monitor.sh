@@ -76,8 +76,8 @@ check_disk() {
   local status=0
   while IFS= read -r line; do
     local use_pct mount
-    use_pct=$(echo "$line" | awk '{print $5}' | tr -d '%')
-    mount=$(echo "$line" | awk '{print $6}')
+    use_pct=$(echo "$line" | awk '{print $1}' | tr -d '%')
+    mount=$(echo "$line" | awk '{print $2}')
 
     echo "infrawatch_disk_usage_percent{mount=\"$mount\"} $use_pct" >> "$METRICS_FILE"
 
@@ -100,7 +100,7 @@ check_network() {
   fi
 
   local open_ports
-  open_ports=$(ss -tulpn | awk 'NR>1 {print $5}' | awk -F: '{print $NF}' | grep -E '^[0-9]+$' | sort -un | tr '\n' ',' | sed 's/,$//')
+  open_ports=$(ss -tulpn | awk 'NR>1 {print $5}' | awk -F: '{print $NF}' | grep -E '^[0-9]+$' | sort -un | tr '\n' ',' | sed 's/,$//' || true)
   log_incident "INFO" "Open ports: $open_ports"
 }
 
