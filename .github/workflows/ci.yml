@@ -101,7 +101,8 @@ jobs:
           docker stop infrawatch-test
 
   # ── Push to registry (on main branch only) ──────────────────────────────
-  docker-push:
+docker-push:
+  if: false
     name: Push to Docker Hub
     runs-on: ubuntu-latest
     needs: [docker-build]
@@ -123,3 +124,4 @@ jobs:
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/infrawatch:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/infrawatch:${{ github.sha }}
+
