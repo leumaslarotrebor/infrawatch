@@ -1,3 +1,5 @@
+![CI](https://github.com/leumaslarotrebor/infrawatch/actions/workflows/ci.yml/badge.svg)
+
 # InfraWatch
 
 A lightweight Linux server health monitoring and auto-remediation agent with a Prometheus metrics endpoint, Grafana dashboards, Docker containerization, and Ansible-based deployment automation.
