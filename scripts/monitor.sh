@@ -2,7 +2,6 @@
 # InfraWatch — system health monitor with auto-remediation
 # shellcheck disable=SC2312
 
-set -x
 set -euo pipefail
 
 # ── Config ────────────────────────────────────────────────────────────────────
