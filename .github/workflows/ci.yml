@@ -8,11 +8,10 @@ on:
 
 jobs:
 
-  # ── Lint & test Bash scripts ──────────────────────────────────────────────
   lint-bash:
     name: Lint Bash scripts
     runs-on: ubuntu-latest
-  steps:
+    steps:
       - uses: actions/checkout@v4
 
       - name: Install shellcheck
@@ -24,11 +23,10 @@ jobs:
       - name: Lint docker-entrypoint.sh
         run: shellcheck docker-entrypoint.sh
 
-  # ── Lint & test Python ───────────────────────────────────────────────────
   lint-python:
     name: Lint Python
     runs-on: ubuntu-latest
-  steps:
+    steps:
       - uses: actions/checkout@v4
 
       - name: Set up Python
@@ -45,11 +43,10 @@ jobs:
       - name: Lint with flake8
         run: flake8 scripts/metrics_server.py --max-line-length=100
 
-  # ── Lint Ansible playbook ────────────────────────────────────────────────
   lint-ansible:
     name: Lint Ansible playbook
     runs-on: ubuntu-latest
-  steps:
+    steps:
       - uses: actions/checkout@v4
 
       - name: Install ansible-lint and collections
@@ -59,14 +56,13 @@ jobs:
 
       - name: Lint deploy.yml
         run: ansible-lint ansible/deploy.yml
-        continue-on-error: true  # informational only for now
+        continue-on-error: true
 
-  # ── Build Docker image ───────────────────────────────────────────────────
   docker-build:
     name: Build Docker image
     runs-on: ubuntu-latest
     needs: [lint-bash, lint-python]
-  steps:
+    steps:
       - uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
@@ -100,13 +96,12 @@ jobs:
 
           docker stop infrawatch-test
 
-  # ── Push to registry (on main branch only) ──────────────────────────────
-docker-push:
-  if: false
-  name: Push to Docker Hub
-  runs-on: ubuntu-latest
-  needs: [docker-build]
-  steps:
+  docker-push:
+    name: Push to Docker Hub
+    runs-on: ubuntu-latest
+    needs: [docker-build]
+    if: false
+    steps:
       - uses: actions/checkout@v4
 
       - name: Log in to Docker Hub
@@ -123,4 +118,3 @@ docker-push:
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/infrawatch:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/infrawatch:${{ github.sha }}
-
